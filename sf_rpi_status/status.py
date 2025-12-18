@@ -432,7 +432,7 @@ def shutdown():
         ha_api.shutdown()
     else:
         from os import system
-        system('shutdown -h now')
+        system('sudo systemctl poweroff -i')
 
 def restart_service():
     from . import systemd_detector as systemd_detector
