@@ -18,6 +18,7 @@ from .status import \
     get_network_connection_type, \
     get_network_speed, \
     restart_service, \
+    reboot, \
     shutdown, \
     CPUFreq, \
     NetworkSpeed, \

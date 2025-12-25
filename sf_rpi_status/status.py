@@ -434,6 +434,14 @@ def shutdown():
         from os import system
         system('sudo systemctl poweroff -i')
 
+def reboot():
+    from . import ha_api
+    if ha_api.is_homeassistant_addon():
+        ha_api.reboot()
+    else:
+        from os import system
+        system('sudo systemctl reboot -i')
+
 def restart_service():
     from . import systemd_detector as systemd_detector
     from . import ha_api
