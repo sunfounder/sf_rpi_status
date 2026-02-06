@@ -1,6 +1,7 @@
 from .utils import run_command
 import subprocess
 import os
+import json
 
 # def get_cpu_temperature():
 #     from psutil import sensors_temperatures
@@ -247,43 +248,72 @@ def get_disk_type(disk_path: str) -> str:
             return 'hd'
 
 def get_disks_info(disks=None, temperature=False):
-    from psutil import disk_usage, disk_partitions
     disk_info = {}
     if disks is None:
-        disks = get_disks()
-    
+        disks = get_disks()  # 假设这个函数依然返回 ['/dev/mmcblk0', '/dev/nvme0n1'] 等
+
+    # 1. 预先通过 lsblk 抓取所有物理磁盘的挂载信息和空间数据
+    # -b: 字节单位, -J: JSON, -a: 显示所有, -o: 关键字段
+    # 排除主设备号为 7 的 loop 设备
+    try:
+        lsblk_cmd = ["lsblk", "-b", "-J", "-e", "7", "-o", "NAME,MOUNTPOINT,FSSIZE,FSUSED"]
+        lsblk_data = json.loads(subprocess.check_output(lsblk_cmd).decode())
+        
+        # 将 lsblk 的树状结构扁平化，方便查找
+        lsblk_flat = {}
+        def flatten(devs):
+            for d in devs:
+                # 记录每一个设备名对应的空间信息
+                # 这里的 d['name'] 可能是 'nvme0n1p1'，我们需要匹配父级名称
+                lsblk_flat[d['name']] = d
+                if 'children' in d:
+                    flatten(d['children'])
+        
+        flatten(lsblk_data.get('blockdevices', []))
+    except Exception as e:
+        print(f"lsblk error: {e}")
+        lsblk_flat = {}
+
+    # 2. 遍历你传入的磁盘列表
     for disk in disks:
+        # 提取设备名，如把 /dev/nvme0n1 变成 nvme0n1
+        disk_name = disk.split('/')[-1]
+        
         mounted = is_disk_mounted(disk)
-        disk_type = get_disk_type(disk)  # 获取磁盘类型
+        disk_type = get_disk_type(disk) 
         
         try:
             total = 0
             used = 0
             free = 0
             percent = 0.0
-            temperature = None
+            temp_val = None
+            
             if temperature:
-                temperature = get_disk_temperature(disk)
+                try:
+                    temp_val = get_disk_temperature(disk)
+                except Exception as e:
+                    temp_val = None
+
             if not mounted:
                 total = get_disk_total(disk)
             else:
-                partitions = disk_partitions(all=False)
-                # Get all mount points for the disk, put in a directory to prevent duplicates
-                mount_points = {}
-                for partition in partitions:
-                    device = partition.device
-                    if disk in partition.device:
-                        path = partition.mountpoint
-                        mount_points[device] = path
-                for device, path in mount_points.items():
-                    usage = disk_usage(path)
-                    total += usage.total
-                    used += usage.used
-                    free += usage.free
+                # 3. 匹配该磁盘下的所有挂载点
+                # 我们在 lsblk_flat 中寻找名字包含 disk_name 的项（匹配分区）
+                for name, info in lsblk_flat.items():
+                    # 匹配逻辑：如果是 nvme0n1，则匹配 nvme0n1 本身或其分区 nvme0n1p1
+                    if (disk_name == name or name.startswith(disk_name)) and info.get('mountpoint'):
+                        if info.get('fssize'):
+                            total += int(info['fssize'])
+                            used += int(info['fsused'])
+                            free += int(info['fssize']) - int(info['fsused'])
+
                 if total == 0:
                     continue
-                percent = used / total * 100
-                percent = round(percent, 2)
+                
+                percent = round((used / total * 100), 2)
+
+            # 保持你原始的 DiskInfo 构造格式
             disk_info[disk] = DiskInfo(
                 total=total,
                 used=used,
@@ -291,7 +321,7 @@ def get_disks_info(disks=None, temperature=False):
                 percent=percent,
                 path=disk,
                 mounted=mounted,
-                temperature=temperature,
+                temperature=temp_val,
                 type=disk_type,
             )
         except Exception as e:
