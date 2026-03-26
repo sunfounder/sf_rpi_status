@@ -333,7 +333,7 @@ def get_boot_time():
     from psutil import boot_time
     return boot_time()
 
-def _get_ips():
+def _get_ips(exclude_prefixes=None):
     import psutil
     import socket
     IPs = {}
@@ -342,6 +342,8 @@ def _get_ips():
         NIC_devices = psutil.net_if_addrs()
         for name, NIC in NIC_devices.items():
             if name == 'lo':
+                continue
+            if exclude_prefixes and name.startswith(exclude_prefixes):
                 continue
             try:
                 for af in NIC:
@@ -354,13 +356,13 @@ def _get_ips():
     
     return IPs
 
-def get_ips():
+def get_ips(exclude_prefixes=None):
     from . import ha_api
     ips = None
     if ha_api.is_homeassistant_addon():
         ips = ha_api.get_ips()
     else:
-        ips = _get_ips()
+        ips = _get_ips(exclude_prefixes=exclude_prefixes)
 
     result = {}
     for key in ips:
@@ -369,13 +371,15 @@ def get_ips():
 
     return result
 
-def get_macs():
+def get_macs(exclude_prefixes=None):
     from os import listdir
     MACs = {}
     NIC_devices = []
     NIC_devices = listdir('/sys/class/net/')
     for NIC in NIC_devices:
         if NIC == 'lo':
+            continue
+        if exclude_prefixes and NIC.startswith(exclude_prefixes):
             continue
         try:
             with open('/sys/class/net/' + NIC + '/address', 'r') as f:
