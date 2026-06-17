@@ -343,6 +343,9 @@ def _get_ips():
         for name, NIC in NIC_devices.items():
             if name == 'lo':
                 continue
+            # Skip virtual interfaces (docker, bridges, veth, tunnels)
+            if name.startswith(('docker', 'br-', 'veth', 'tun', 'tap')):
+                continue
             try:
                 for af in NIC:
                     if af.family == socket.AF_INET: # 2:'IPV4'
@@ -376,6 +379,9 @@ def get_macs():
     NIC_devices = listdir('/sys/class/net/')
     for NIC in NIC_devices:
         if NIC == 'lo':
+            continue
+        # Skip virtual interfaces (docker, bridges, veth, tunnels)
+        if NIC.startswith(('docker', 'br-', 'veth', 'tun', 'tap')):
             continue
         try:
             with open('/sys/class/net/' + NIC + '/address', 'r') as f:
